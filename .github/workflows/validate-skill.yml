@@ -1,0 +1,57 @@
+name: validate-skill
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验 SKILL.md 结构与引用
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          root = pathlib.Path(".")
+          errs = []
+
+          skill = root / "SKILL.md"
+          if not skill.exists():
+              print("FAIL: SKILL.md 不存在")
+              sys.exit(1)
+          text = skill.read_text(encoding="utf-8")
+
+          fm = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+          if not fm:
+              errs.append("缺少 YAML frontmatter（--- ... ---）")
+          else:
+              block = fm.group(1)
+              m_name = re.search(r"^name:\s*(.+)$", block, re.M)
+              m_desc = re.search(r"^description:\s*(.+)$", block, re.M)
+              if not m_name:
+                  errs.append("frontmatter 缺少 name")
+              elif not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", m_name.group(1).strip()):
+                  errs.append("name 需为小写 kebab-case")
+              if not m_desc:
+                  errs.append("frontmatter 缺少 description")
+              elif len(m_desc.group(1).strip()) < 20:
+                  errs.append("description 过短，需说明能力与触发场景")
+
+          for p in re.findall(r"`((?:references|assets)/[^`]+)`", text):
+              if not (root / p).exists():
+                  errs.append(f"SKILL.md 引用的文件不存在：{p}")
+
+          for p in ["README.md", "LICENSE"]:
+              if not (root / p).exists():
+                  errs.append(f"缺少仓库文件：{p}")
+
+          if errs:
+              print("\n".join("FAIL: " + e for e in errs))
+              sys.exit(1)
+
+          print("SKILL.md 校验通过")
+          PY
